@@ -2,6 +2,12 @@
 
 A Streamlit app that fetches stock data from Alpha Vantage, displays charts with moving averages, and generates AI-powered insights using an OpenAI-compatible LLM.
 
+## Landing page
+
+![Landing page screenshot](docs/landing-screenshot.png)
+
+*Save a screenshot of the app’s first screen as `docs/landing-screenshot.png` to show it here.*
+
 ## Tech Stack
 
 - **Python 3.10+**
@@ -14,9 +20,10 @@ A Streamlit app that fetches stock data from Alpha Vantage, displays charts with
 
 ```
 ├── ui_app.py                 # Streamlit UI entry point
-├── stock_utility_handler.py  # Alpha Vantage client & data utilities
+├── stock_utility_handler.py  # Alpha Vantage client & chart plotting
 ├── ai_insights_handler.py    # LLM wrapper for insights
 ├── llm_config.py             # Model configuration
+├── img/                      # Generated chart PNGs (created at runtime)
 └── pyproject.toml            # Dependencies
 ```
 
@@ -33,8 +40,8 @@ pip install uv
 Create a `.env` file in the project root:
 
 ```
-ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key
-PERPLEXITY_API_KEY=your_perplexity_key
+ALPHAVANTAGE_API_KEY=your_alpha_vantage_key
+PPLX_API_KEY=your_perplexity_key
 ```
 
 Get your API keys:
@@ -49,6 +56,21 @@ uv run streamlit run ui_app.py
 ```
 
 The app will open at `http://localhost:8501`.
+
+## How graphs are generated
+
+Charts are built from Alpha Vantage daily time-series data (~100 days) and saved as PNGs in the project’s `img/` folder.
+
+1. **Data** – For each symbol and market, the app requests `TIME_SERIES_DAILY` from Alpha Vantage, converts it to a pandas DataFrame (date index, `close`, `volume`), and applies the exchange timezone for labels.
+
+2. **Plot layout** – Each chart is a single figure with three stacked subplots (matplotlib):
+   - **Closing price** – Line plot of daily close over time (blue).
+   - **Volume** – Bar chart of daily trading volume (green).
+   - **Moving averages** – Closing price (blue) with 7-day MA (orange) and 20-day MA (red). MAs are computed with a rolling window on the close series.
+
+3. **Axes** – Dates use the exchange timezone; major ticks are monthly and minor ticks weekly. The figure is saved with `plt.savefig()`.
+
+4. **Output** – One PNG per symbol and market, e.g. `img/NASDAQ_AAPL.png`. The `img/` directory is created automatically if it doesn’t exist. These paths are then used when requesting AI analysis of the chart.
 
 ## Supported Markets
 
