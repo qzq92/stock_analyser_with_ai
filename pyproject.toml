@@ -1,0 +1,22 @@
+ [project]
+ name = "stock-analyser-with-ai"
+ version = "0.1.0"
+ description = "Stock analyser with AI features."
+ readme = "README.md"
+ requires-python = ">=3.10"
+ dependencies = [
+   "pandas",
+   "matplotlib",
+   "requests",
+   "pytz",
+  "langchain",
+  "langchain-openai",
+   "streamlit",
+ ]
+
+ [build-system]
+ requires = ["hatchling"]
+ build-backend = "hatchling.build"
+
+ [tool.uv]
+package = false
