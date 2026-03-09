@@ -4,9 +4,7 @@ A Streamlit app that fetches stock data from Alpha Vantage, displays charts with
 
 ## Landing page
 
-![Landing page screenshot](docs/landing-screenshot.png)
-
-*Save a screenshot of the app’s first screen as `docs/landing-screenshot.png` to show it here.*
+![Landing page screenshot](img/Sample_landing_page.jpg)
 
 ## Tech Stack
 
