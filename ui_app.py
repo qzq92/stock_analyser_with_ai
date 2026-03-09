@@ -1,25 +1,32 @@
 """Streamlit UI for the Stock AI Agent: multi-symbol analysis and results."""
 
+import os
+import sys
+
+from dotenv import load_dotenv
+load_dotenv()
+
+if __name__ == "__main__" and not os.environ.get("_STREAMLIT_RUN"):
+    import subprocess
+    env = {**os.environ, "_STREAMLIT_RUN": "1"}
+    subprocess.run([sys.executable, "-m", "streamlit", "run", __file__], env=env)
+    sys.exit(0)
+
 import warnings
 warnings.filterwarnings("ignore", message="Core Pydantic V1 functionality")
 
 import concurrent.futures
-import os
 
 from ai_insights_handler import AIInsights
 from stock_utility_handler import StockAPI, StockAnalyzer, TickerNotFoundError
 import streamlit as st
 
 
-def _parse_symbols(raw_symbols: str) -> list[str]:
-    """Parse comma-separated symbols and keep at most 3 unique entries."""
-    symbols = [symbol.strip().upper() for symbol in raw_symbols.split(",") if symbol.strip()]
-    return list(dict.fromkeys(symbols))[:3]
-
-
 def _prepare_symbol_analysis(stock: str, market: str) -> dict[str, str]:
     """Fetch data and generate chart for one symbol without Streamlit calls."""
-    image_path = f"<your_image_path>/{market}_{stock}.png"
+    img_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "img")
+    os.makedirs(img_dir, exist_ok=True)
+    image_path = os.path.join(img_dir, f"{market}_{stock}.png")
     stock_api_obj = StockAPI(os.getenv("ALPHAVANTAGE_API_KEY"))
     stock_analyzer_obj = StockAnalyzer()
 
@@ -30,26 +37,13 @@ def _prepare_symbol_analysis(stock: str, market: str) -> dict[str, str]:
     return {"stock": stock, "image_path": image_path}
 
 
-if "page" not in st.session_state:
-    st.session_state.page = "page1"
-    st.session_state.ticker_input = "RELIANCE"
-    st.session_state.market = "NASDAQ"
-    st.session_state.symbols = ["RELIANCE"]
-    st.session_state.results = []
-    st.session_state.internal_results_available = False
-
-
 def page1() -> None:
-    """Render the input page: up to 3 symbols and market selection."""
+    """Render the input page: 1–3 individual symbol fields and market selection."""
     st.title("Stock AI Agent")
 
     col1, col2 = st.columns(2)
     with col1:
-        st.session_state.ticker_input = st.text_input(
-            "Enter up to 3 Stock Symbols (comma-separated)",
-            value=st.session_state.ticker_input,
-            key="ticker_input",
-        )
+        num_tickers = st.selectbox("Number of stocks to analyse", [1, 2, 3], key="num_tickers")
     with col2:
         markets = ["NASDAQ", "DOW_JONES", "S&P500", "SINGAPORE"]
         selected_market = st.session_state.market if st.session_state.market in markets else "NASDAQ"
@@ -60,18 +54,24 @@ def page1() -> None:
             key="market_input",
         )
 
+    st.markdown("---")
+
+    ticker_cols = st.columns(num_tickers)
+    for i, col in enumerate(ticker_cols):
+        with col:
+            st.text_input(f"Symbol {i + 1}", key=f"ticker_{i}", placeholder="e.g. AAPL")
+
     st.sidebar.header("About")
     st.sidebar.write("This is a stock analysis platform.")
 
     st.markdown("---")
 
     if st.button("Submit"):
-        raw_symbols = [s.strip() for s in st.session_state.ticker_input.split(",") if s.strip()]
-        if len(raw_symbols) > 3:
-            st.error("Please limit input to at most 3 symbols.")
-            return
-
-        parsed_symbols = _parse_symbols(st.session_state.ticker_input)
+        entered = [
+            st.session_state.get(f"ticker_{i}", "").strip().upper()
+            for i in range(num_tickers)
+        ]
+        parsed_symbols = list(dict.fromkeys(s for s in entered if s))
         if not parsed_symbols:
             st.error("Please enter at least one stock symbol.")
             return
@@ -158,6 +158,13 @@ def page2() -> None:
             st.session_state.results = []
             st.rerun()
 
+
+if "page" not in st.session_state:
+    st.session_state.page = "page1"
+    st.session_state.market = "NASDAQ"
+    st.session_state.symbols = []
+    st.session_state.results = []
+    st.session_state.internal_results_available = False
 
 if st.session_state.page == "page1":
     page1()
