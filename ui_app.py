@@ -1,5 +1,8 @@
 """Streamlit UI for the Stock AI Agent: multi-symbol analysis and results."""
 
+import warnings
+warnings.filterwarnings("ignore", message="Core Pydantic V1 functionality")
+
 import concurrent.futures
 import os
 

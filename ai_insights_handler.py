@@ -3,11 +3,7 @@
 from collections.abc import Iterator
 from langchain.chat_models import init_chat_model
 
-from llm_config import (
-    DEFAULT_OPENAI_MODEL_KEY,
-    OPENAI_MODELS,
-    PERPLEXITY_OPENAI_BASE_URL,
-)
+from llm_config import OPENAI_MODEL, PERPLEXITY_OPENAI_BASE_URL
 
 INVALID_API_KEY_RESPONSE = "Sorry, I am unable to provide response due to invalid API key"
 
@@ -15,23 +11,14 @@ INVALID_API_KEY_RESPONSE = "Sorry, I am unable to provide response due to invali
 class AIInsights:
     """Generates stock analysis and suggestions using an LLM via Perplexity base URL."""
 
-    def __init__(self, api_key: str, model_key: str = DEFAULT_OPENAI_MODEL_KEY) -> None:
-        """Initialize the LLM client with API key and model from config.
+    def __init__(self, api_key: str) -> None:
+        """Initialize the LLM client with API key.
 
         Args:
             api_key: API key for the OpenAI-compatible endpoint (e.g. Perplexity).
-            model_key: Key into OPENAI_MODELS in llm_config (e.g. 'fast', 'balanced', 'quality').
-
-        Raises:
-            ValueError: If model_key is not present in OPENAI_MODELS.
         """
-        if model_key not in OPENAI_MODELS:
-            valid_keys = ", ".join(sorted(OPENAI_MODELS.keys()))
-            raise ValueError(f"Invalid model_key '{model_key}'. Choose one of: {valid_keys}")
-
-        model_name = OPENAI_MODELS[model_key]
         self.model = init_chat_model(
-            model=model_name,
+            model=OPENAI_MODEL,
             model_provider="openai",
             api_key=api_key,
             base_url=PERPLEXITY_OPENAI_BASE_URL,
