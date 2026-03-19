@@ -3,4 +3,6 @@
 from typing import Final
 
 PERPLEXITY_OPENAI_BASE_URL: Final[str] = "https://api.perplexity.ai"
-OPENAI_MODEL: Final[str] = "gpt-5.1-mini"
+MODEL: Final[str] = "sonar-pro"
+MODEL_PROVIDER: Final[str] = "openai"
+SUPPORTED_PERPLEXITY_MODELS: Final[tuple[str, ...]] = ("sonar", "sonar-pro")
