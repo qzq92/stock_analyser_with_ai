@@ -91,7 +91,7 @@ def page2() -> None:
 
     if not st.session_state.internal_results_available:
         with st.spinner("Analyzing... Please wait..."):
-            ai_insights_obj = AIInsights(os.getenv("PPLX_API_KEY"))
+            ai_insights_obj = AIInsights(os.getenv("MODEL_API_KEY"))
             prepared_by_symbol = {}
             max_workers = min(3, len(symbols))
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -148,7 +148,7 @@ def page2() -> None:
             stock = result["stock"]
             st.subheader(f"Chart Analysis - {stock}")
             if result["image_path"]:
-                st.image(result["image_path"], caption=f"{stock} Chart", use_column_width=True)
+                st.image(result["image_path"], caption=f"{stock} Chart", width=True)
             st.subheader(f"Analysis Results - {stock}")
             st.write(result["ai_insights"])
 
