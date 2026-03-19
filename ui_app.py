@@ -98,7 +98,7 @@ def page2() -> None:
 
     if not st.session_state.internal_results_available:
         with st.spinner("Analyzing... Please wait..."):
-            ai_insights_obj = AIInsights(os.getenv("MODEL_API_KEY"))
+            ai_insights_obj = AIInsights()
             prepared_by_symbol = {}
             max_workers = min(3, len(symbols))
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -145,8 +145,8 @@ def page2() -> None:
                     {
                         "stock": stock,
                         "image_path": image_path,
-                        "answer": structured_response.get("answer", "".join(stream_buffer)),
-                        "citations": structured_response.get("citations", []),
+                        "answer": structured_response.answer or "".join(stream_buffer),
+                        "citations": structured_response.citations,
                     }
                 )
 

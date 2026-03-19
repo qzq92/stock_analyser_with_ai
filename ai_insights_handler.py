@@ -4,44 +4,28 @@ import asyncio
 import json
 from collections.abc import Iterator
 from typing import Any
-from langchain.chat_models import init_chat_model
 
-from config.llm_config import (
-    MODEL,
-    MODEL_PROVIDER,
-    PERPLEXITY_OPENAI_BASE_URL,
-    SUPPORTED_PERPLEXITY_MODELS,
-)
+from agent.stock_analysis_agent import create_stock_analysis_agent
+from pydantic import BaseModel, Field
 from prompts.analyst_prompt import ANALYST_PROMPT_TEMPLATE
 
 INVALID_API_KEY_RESPONSE = "Sorry, I am unable to provide response due to invalid API key"
-StructuredResponse = dict[str, Any]
+
+
+class StructuredResponse(BaseModel):
+    """Structured LLM payload with plain-text answer and citation URLs."""
+
+    answer: str = ""
+    citations: list[str] = Field(default_factory=list)
 
 
 class AIInsights:
-    """Generates stock analysis and suggestions using an LLM via Perplexity base URL."""
+    """Generates stock analysis and suggestions using the configured stock agent."""
 
-    def __init__(self, api_key: str) -> None:
-        """Initialize the LLM client with API key.
-
-        Args:
-            api_key: API key for the OpenAI-compatible endpoint (e.g. Perplexity).
-        """
-        if MODEL not in SUPPORTED_PERPLEXITY_MODELS:
-            supported_models = ", ".join(SUPPORTED_PERPLEXITY_MODELS)
-            raise ValueError(
-                f"Unsupported model '{MODEL}' for Perplexity endpoint. "
-                f"Supported models: {supported_models}"
-            )
-
-        self.model = init_chat_model(
-            model=MODEL,
-            model_provider=MODEL_PROVIDER,
-            api_key=api_key,
-            base_url=PERPLEXITY_OPENAI_BASE_URL,
-            temperature=0,
-        )
-        self._latest_response: StructuredResponse = {"answer": "", "citations": []}
+    def __init__(self) -> None:
+        """Initialize the stock analysis agent from environment-based config."""
+        self.analysis_agent = create_stock_analysis_agent()
+        self._latest_response = StructuredResponse()
 
     def get_ai_insights_stream(self, stock: str, market: str) -> Iterator[str]:
         """Stream LLM output chunks for the given stock and market prompt.
@@ -54,7 +38,7 @@ class AIInsights:
             Incremental text chunks from the model response stream.
         """
         prompt = self._build_prompt(stock, market)
-        self._latest_response = {"answer": "", "citations": []}
+        self._latest_response = StructuredResponse()
         loop = asyncio.new_event_loop()
         iterator = self._astream_answer(prompt)
         try:
@@ -70,18 +54,18 @@ class AIInsights:
 
     def get_latest_response(self, stock: str, market: str) -> StructuredResponse:
         """Return latest structured response, or fetch it once via non-streaming fallback."""
-        if self._latest_response["answer"] or self._latest_response["citations"]:
+        if self._latest_response.answer or self._latest_response.citations:
             print(f"Latest response: {self._latest_response}")
             return self._latest_response
 
         prompt = self._build_prompt(stock, market)
         try:
-            response = self.model.invoke(prompt)
+            response = self.analysis_agent.invoke(prompt)
             content = response.content if hasattr(response, "content") else str(response)
             self._latest_response = self._parse_structured_response(content)
         except Exception as exc:
             if self._is_invalid_api_key_error(exc):
-                return {"answer": INVALID_API_KEY_RESPONSE, "citations": []}
+                return StructuredResponse(answer=INVALID_API_KEY_RESPONSE, citations=[])
             raise
 
         return self._latest_response
@@ -92,7 +76,7 @@ class AIInsights:
         streamed_answer = ""
 
         try:
-            async for event in self.model.astream_events(prompt, version="v2"):
+            async for event in self.analysis_agent.astream_events(prompt, version="v2"):
                 print(f"Event: {event}")
                 if event.get("event") != "on_chat_model_stream":
                     continue
@@ -119,10 +103,10 @@ class AIInsights:
             )
         except Exception as exc:
             if self._is_invalid_api_key_error(exc):
-                self._latest_response = {
-                    "answer": INVALID_API_KEY_RESPONSE,
-                    "citations": [],
-                }
+                self._latest_response = StructuredResponse(
+                    answer=INVALID_API_KEY_RESPONSE,
+                    citations=[],
+                )
                 yield INVALID_API_KEY_RESPONSE
                 return
             raise
@@ -212,17 +196,17 @@ class AIInsights:
         try:
             payload = json.loads(cleaned_text)
         except json.JSONDecodeError:
-            return {
-                "answer": fallback_answer or raw_text.strip(),
-                "citations": [],
-            }
+            return StructuredResponse(
+                answer=fallback_answer or raw_text.strip(),
+                citations=[],
+            )
 
         answer = payload.get("answer")
         citations = payload.get("citations")
-        return {
-            "answer": answer if isinstance(answer, str) else fallback_answer,
-            "citations": self._normalize_citations(citations),
-        }
+        return StructuredResponse(
+            answer=answer if isinstance(answer, str) else fallback_answer,
+            citations=self._normalize_citations(citations),
+        )
 
     def _normalize_citations(self, citations: Any) -> list[str]:
         """Normalize citation list to deduplicated URL strings."""
