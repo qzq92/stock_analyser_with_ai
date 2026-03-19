@@ -1,5 +1,6 @@
 """Streamlit UI for the US Stock AI Agent: multi-symbol analysis and results."""
 
+import json
 import os
 import sys
 
@@ -37,7 +38,11 @@ def _prepare_symbol_analysis(stock: str, market: str) -> dict[str, str]:
     df = stock_analyzer_obj.json_to_dataframe(market_data, stock, market)
     stock_analyzer_obj.plot_stock_data(df, stock, market, image_path)
 
-    return {"stock": stock, "image_path": image_path}
+    return {
+        "stock": stock,
+        "image_path": image_path,
+        "market_data_json": json.dumps(market_data),
+    }
 
 
 def page1() -> None:
@@ -97,95 +102,123 @@ def page2() -> None:
     st.title(f"Analysis for {', '.join(symbols)} ({market})")
 
     if not st.session_state.internal_results_available:
-        with st.spinner("Analyzing... Please wait..."):
-            ai_insights_obj = AIInsights()
-            prepared_by_symbol = {}
-            max_workers = min(3, len(symbols))
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_symbol = {
-                    executor.submit(_prepare_symbol_analysis, stock, market): stock for stock in symbols
-                }
-                for future in concurrent.futures.as_completed(future_to_symbol):
-                    stock = future_to_symbol[future]
-                    try:
-                        prepared_by_symbol[stock] = future.result()
-                    except TickerNotFoundError:
-                        prepared_by_symbol[stock] = {
-                            "stock": stock,
-                            "error": f"Ticker '{stock}' was not found. Please check the symbol and try again.",
-                        }
-                    except ValueError as exc:
-                        prepared_by_symbol[stock] = {"stock": stock, "error": str(exc)}
-
-            run_results = []
-            for stock in symbols:
-                prepared = prepared_by_symbol.get(stock, {"stock": stock, "error": "Unknown preparation failure"})
-                if "error" in prepared:
-                    run_results.append(
-                        {
-                            "stock": stock,
-                            "image_path": "",
-                            "answer": f"Preparation failed for {stock}: {prepared['error']}",
-                            "citations": [],
-                        }
-                    )
-                    continue
-
-                image_path = prepared["image_path"]
-
-                streaming_output = st.empty()
-                stream_buffer = []
-                for chunk in ai_insights_obj.get_ai_insights_stream(stock, market):
-                    stream_buffer.append(chunk)
-                    streaming_output.markdown("".join(stream_buffer))
-                structured_response = ai_insights_obj.get_latest_response()
-                streaming_output.empty()
-
-                run_results.append(
-                    {
-                        "stock": stock,
-                        "image_path": image_path,
-                        "answer": structured_response.answer or "".join(stream_buffer),
-                        "citations": structured_response.citations,
-                    }
-                )
-
-            st.session_state.results = run_results
-            st.session_state.internal_results_available = True
-
-    if st.session_state.internal_results_available:
-        all_citations: list[str] = []
-        seen_citation_urls: set[str] = set()
-        for result in st.session_state.results:
-            stock = result["stock"]
-            left_col, right_col = st.columns(2)
-            with left_col:
-                st.subheader(f"Chart Analysis - {stock}")
-                if result["image_path"]:
-                    st.image(result["image_path"], caption=f"{stock} Chart", width="stretch")
-            with right_col:
-                st.subheader(f"Analysis Results - {stock}")
-                st.text(result["answer"])
-
-            for url in result.get("citations", []):
-                if url and url not in seen_citation_urls:
-                    seen_citation_urls.add(url)
-                    all_citations.append(url)
-
-            st.markdown("---")
-
-        st.subheader("Sources")
-        if all_citations:
-            for index, url in enumerate(all_citations, start=1):
-                st.markdown(f"{index}. [{url}]({url})")
-        else:
-            st.caption("No sources provided.")
-
-        if st.button("Back"):
+        if st.button("Back to main", key="back_during_analysis"):
             st.session_state.page = "page1"
             st.session_state.internal_results_available = False
             st.session_state.results = []
             st.rerun()
+
+        ai_insights_obj = AIInsights()
+        run_results = []
+        for stock in symbols:
+            with st.spinner(f"Preparing chart for {stock}..."):
+                try:
+                    prepared = _prepare_symbol_analysis(stock, market)
+                except TickerNotFoundError:
+                    prepared = {
+                        "stock": stock,
+                        "image_path": "",
+                        "market_data_json": "",
+                        "error": f"Ticker '{stock}' was not found. Please check the symbol and try again.",
+                    }
+                except ValueError as exc:
+                    prepared = {
+                        "stock": stock,
+                        "image_path": "",
+                        "market_data_json": "",
+                        "error": str(exc),
+                    }
+
+            if prepared.get("error"):
+                left_col, right_col = st.columns(2)
+                with left_col:
+                    st.subheader(f"Chart Analysis - {stock}")
+                    if prepared.get("image_path"):
+                        st.image(
+                            prepared["image_path"],
+                            caption=f"{stock} Chart",
+                            width='stretch,
+                        )
+                    else:
+                        st.write("Chart unavailable due to preparation error.")
+
+                with right_col:
+                    st.subheader(f"Analysis Results - {stock}")
+                    st.error(prepared["error"])
+
+                st.markdown("---")
+                run_results.append(
+                    {
+                        "stock": stock,
+                        "image_path": "",
+                        "answer": f"Preparation failed for {stock}: {prepared['error']}",
+                        "citations": [],
+                    }
+                )
+                continue
+
+            image_path = prepared["image_path"]
+            stock_data = prepared["market_data_json"]
+
+            left_col, right_col = st.columns(2)
+            with left_col:
+                st.subheader(f"Chart Analysis - {stock}")
+                st.image(image_path, caption=f"{stock} Chart", width='stretch)
+            with right_col:
+                st.subheader(f"Analysis Results - {stock}")
+                streaming_output = st.empty()
+                stream_buffer: list[str] = []
+                for chunk in ai_insights_obj.get_ai_insights_stream(stock, market, stock_data):
+                    stream_buffer.append(chunk)
+                    streaming_output.markdown("".join(stream_buffer))
+
+                structured_response = ai_insights_obj.get_latest_response()
+                answer = structured_response.answer or "".join(stream_buffer)
+                citations = structured_response.citations
+                streaming_output.text(answer)
+                if citations:
+                    st.markdown("**Sources**")
+                    for i, url in enumerate(citations, start=1):
+                        st.markdown(f"{i}. [{url}]({url})")
+
+            st.markdown("---")
+
+            run_results.append(
+                {
+                    "stock": stock,
+                    "image_path": image_path,
+                    "answer": structured_response.answer or "".join(stream_buffer),
+                    "citations": structured_response.citations,
+                }
+            )
+
+        st.session_state.results = run_results
+        st.session_state.internal_results_available = True
+        st.rerun()
+
+    else:
+        for result in st.session_state.results:
+            stock = result["stock"]
+            citations = result.get("citations") or []
+            left_col, right_col = st.columns(2)
+            with left_col:
+                st.subheader(f"Chart Analysis - {stock}")
+                if result["image_path"]:
+                    st.image(result["image_path"], caption=f"{stock} Chart", width='stretch)
+            with right_col:
+                st.subheader(f"Analysis Results - {stock}")
+                st.text(result["answer"])
+                if citations:
+                    st.markdown("**Sources**")
+                    for i, url in enumerate(citations, start=1):
+                        st.markdown(f"{i}. [{url}]({url})")
+            st.markdown("---")
+
+    if st.button("Back"):
+        st.session_state.page = "page1"
+        st.session_state.internal_results_available = False
+        st.session_state.results = []
+        st.rerun()
 
 
 if "page" not in st.session_state:

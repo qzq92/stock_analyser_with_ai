@@ -2,7 +2,6 @@
 
 from typing import Final
 
-PERPLEXITY_OPENAI_BASE_URL: Final[str] = "https://api.perplexity.ai"
+LLM_BASE_URL: Final[str] = "https://api.perplexity.ai"
 MODEL: Final[str] = "sonar-pro"
-MODEL_PROVIDER: Final[str] = "perplexity"
-SUPPORTED_PERPLEXITY_MODELS: Final[tuple[str, ...]] = ("sonar", "sonar-pro")
+MODEL_PROVIDER: Final[str] = "openai"

@@ -142,6 +142,8 @@ class StockAnalyzer:
             image_path: File path to save the figure (e.g. PNG).
         """
         exchange_timezone = self._get_market_timezone(market)
+        df = df.sort_index()
+        print(df.head())
         dates = pd.to_datetime(df.index)
         plt.figure(figsize=(16, 10))
 

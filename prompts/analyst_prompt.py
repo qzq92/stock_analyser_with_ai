@@ -6,6 +6,8 @@ ANALYST_PROMPT_TEMPLATE = PromptTemplate.from_template(
     """Return ONLY valid JSON with exactly two top-level fields:
 {{"answer": "<plain text analysis>", "citations": ["https://..."]}}.
 Analyze stock '{stock}' over the last 100 days on market '{market}'.
+Here is the stock data (daily OHLCV from Alpha Vantage):
+{stock_data}
 Base your answer on volume traded, closing prices, and 50-day/200-day moving averages
 (or 50-day only when 200-day is unavailable).
 State whether the stock appears worth purchasing or not.

@@ -27,17 +27,20 @@ class AIInsights:
         self.analysis_agent = create_stock_analysis_agent()
         self._latest_response = StructuredResponse()
 
-    def get_ai_insights_stream(self, stock: str, market: str) -> Iterator[str]:
+    def get_ai_insights_stream(
+        self, stock: str, market: str, stock_data: str
+    ) -> Iterator[str]:
         """Stream LLM output chunks for the given stock and market prompt.
 
         Args:
             stock: Stock ticker symbol.
             market: Exchange identifier (e.g. 'NASDAQ', 'SINGAPORE').
+            stock_data: Pre-fetched stock data JSON string from Alpha Vantage.
 
         Yields:
             Incremental text chunks from the model response stream.
         """
-        prompt = self._build_prompt(stock, market)
+        prompt = self._build_prompt(stock, market, stock_data)
         self._latest_response = StructuredResponse()
         loop = asyncio.new_event_loop()
         iterator = self._astream_answer(prompt)
@@ -211,9 +214,11 @@ class AIInsights:
             normalized.append(url)
         return normalized
 
-    def _build_prompt(self, stock: str, market: str) -> str:
+    def _build_prompt(self, stock: str, market: str, stock_data: str) -> str:
         """Build the stock analysis prompt for the model."""
-        return ANALYST_PROMPT_TEMPLATE.format(stock=stock, market=market)
+        return ANALYST_PROMPT_TEMPLATE.format(
+            stock=stock, market=market, stock_data=stock_data
+        )
 
     def _is_invalid_api_key_error(self, exc: Exception) -> bool:
         """Check whether an exception indicates invalid API-key authentication."""
