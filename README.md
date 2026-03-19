@@ -6,6 +6,11 @@ A Streamlit app that fetches US stock data from Alpha Vantage, plots volume and 
 
 ![Landing page screenshot](img/Sample_landing_page.jpg)
 
+## Sample response
+
+![Sample response screenshot](img/sample_response.jpg)
+Example output showing side-by-side chart and plain-text analysis, with all citation links consolidated in the `Sources` section at the bottom.
+
 ## Tech Stack
 
 - **Python 3.10+**
