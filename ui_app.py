@@ -123,6 +123,7 @@ def page2() -> None:
                             "stock": stock,
                             "image_path": "",
                             "ai_insights": f"Preparation failed for {stock}: {prepared['error']}",
+                            "sources": [],
                         }
                     )
                     continue
@@ -135,12 +136,14 @@ def page2() -> None:
                 for chunk in ai_insights_obj.get_ai_insights_stream(image_path, stock, market):
                     stream_buffer.append(chunk)
                     streaming_output.markdown("".join(stream_buffer))
+                sources = ai_insights_obj.get_latest_sources(stock, market)
 
                 run_results.append(
                     {
                         "stock": stock,
                         "image_path": image_path,
                         "ai_insights": "".join(stream_buffer),
+                        "sources": sources,
                     }
                 )
 
@@ -155,6 +158,12 @@ def page2() -> None:
                 st.image(result["image_path"], caption=f"{stock} Chart", width=True)
             st.subheader(f"Analysis Results - {stock}")
             st.write(result["ai_insights"])
+            st.markdown("**Sources**")
+            if result.get("sources"):
+                for source in result["sources"]:
+                    st.markdown(f"{source['index']}. [{source['title']}]({source['url']})")
+            else:
+                st.caption("No sources provided.")
 
         if st.button("Back"):
             st.session_state.page = "page1"
