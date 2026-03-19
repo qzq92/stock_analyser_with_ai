@@ -45,7 +45,7 @@ def page1() -> None:
     with col1:
         num_tickers = st.selectbox("Number of stocks to analyse", [1, 2, 3], key="num_tickers")
     with col2:
-        markets = ["NASDAQ", "DOW_JONES", "S&P500", "SINGAPORE"]
+        markets = ["NASDAQ", "DOW_JONES", "S&P500"]
         selected_market = st.session_state.market if st.session_state.market in markets else "NASDAQ"
         st.session_state.market = st.selectbox(
             "Select Market",

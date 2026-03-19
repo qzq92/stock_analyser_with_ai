@@ -39,12 +39,16 @@ Create a `.env` file in the project root:
 
 ```
 ALPHAVANTAGE_API_KEY=your_alpha_vantage_key
-PPLX_API_KEY=your_perplexity_key
+MODEL_API_KEY=your_model_provider_key
 ```
+
+`MODEL_API_KEY` should be the API key for the provider configured in `llm_config.py` (for example, Perplexity when using `sonar` / `sonar-pro`).
 
 Get your API keys:
 - Alpha Vantage: https://www.alphavantage.co/
 - Perplexity: https://www.perplexity.ai/
+- OpenAI: https://platform.openai.com/api-keys
+- DeepSeek: https://platform.deepseek.com/api_keys
 
 ### 3. Install dependencies and run
 
@@ -75,7 +79,6 @@ Charts are built from Alpha Vantage daily time-series data (~100 days) and saved
 | Market | Symbol Format |
 |--------|---------------|
 | NASDAQ, Dow Jones, S&P 500 | `AAPL`, `MSFT` |
-| Singapore | `D05.SI`, `U11.SI` |
 
 ## Alpha Vantage Rate Limits
 
@@ -92,4 +95,4 @@ The free tier has strict limitations:
 ## Notes
 
 - **Data**: Uses `TIME_SERIES_DAILY` with ~100 days of history.
-- **Model**: Uses `gpt-5.1-mini` via Perplexity. Edit `llm_config.py` to change.
+- **Model**: Uses `sonar` model via Perplexity. Edit `llm_config.py` to change.
