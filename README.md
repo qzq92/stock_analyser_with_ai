@@ -1,6 +1,6 @@
 # US Stock Analyser with AI
 
-A Streamlit app that fetches US stock data from Alpha Vantage, plots volume and moving-average charts, and generates AI-powered analysis with structured output (`answer` + `citations`).
+A Streamlit app that fetches US stock data from Alpha Vantage, plots volume and moving-average charts, and generates AI-powered analysis with structured output (`answer` + `citations`). Before each analysis, a separate company-info agent retrieves the full company name, a brief business description, and the official website.
 
 ## Landing page
 
@@ -9,25 +9,35 @@ A Streamlit app that fetches US stock data from Alpha Vantage, plots volume and 
 ## Sample response
 
 ![Sample response screenshot](img/sample_response.jpg)
-Example output showing side-by-side chart and plain-text analysis, with all citation links consolidated in the `Sources` section at the bottom.
+Example output showing company information header, side-by-side chart and plain-text analysis, with citation links listed under the analysis.
 
 ## Tech Stack
 
 - **Python 3.10+**
 - **Streamlit** - Web UI
 - **pandas / matplotlib** - Data processing and charting
-- **LangChain + OpenAI** - LLM integration (Perplexity API)
+- **LangChain + OpenAI** - LLM integration (Perplexity Sonar API)
 - **Alpha Vantage** - Stock market data
 
 ## Project Structure
 
 ```
-├── ui_app.py                 # Streamlit UI orchestration and rendering
-├── stock_utility_handler.py  # Alpha Vantage fetch + dataframe/chart generation
-├── ai_insights_handler.py    # LLM streaming + structured JSON parsing
-├── llm_config.py             # Model configuration
-├── img/                      # Generated chart PNGs (created at runtime)
-└── pyproject.toml            # Dependencies
+├── ui_app.py                       # Streamlit UI orchestration and rendering
+├── stock_utility_handler.py        # Alpha Vantage fetch + dataframe/chart generation
+├── ai_insights_handler.py          # LLM streaming + structured JSON parsing
+├── company_info_handler.py         # Company name/description/website lookup via LLM
+├── agent/
+│   ├── stock_analysis_agent.py     # LLM instance for stock analysis
+│   └── company_info_agent.py       # LLM instance for company info lookups
+├── prompts/
+│   ├── analyst_prompt.py           # Stock analysis prompt template
+│   └── company_info_prompt.py      # Company info prompt template
+├── config/
+│   └── llm_config.py              # Model provider, model name, and base URL
+├── tools/
+│   └── search_av.py               # LangChain tool wrapping Alpha Vantage API
+├── img/                            # Generated chart PNGs (created at runtime)
+└── pyproject.toml                  # Dependencies
 ```
 
 ## File Purposes
@@ -35,23 +45,37 @@ Example output showing side-by-side chart and plain-text analysis, with all cita
 - `ui_app.py`
   - Main Streamlit app entrypoint.
   - Handles user inputs (ticker count, market, symbols), app state, and page flow.
-  - Runs chart preparation and LLM analysis, then renders chart/analysis side by side.
-  - Aggregates all citation links and displays them in one `Sources` section at the bottom.
+  - For each symbol: fetches company info, renders the chart, then streams AI analysis side by side.
+  - Citation links are displayed under the analysis results for each stock.
 
 - `stock_utility_handler.py`
   - Calls Alpha Vantage `TIME_SERIES_DAILY` for market/ticker data.
   - Converts API JSON into pandas DataFrame with exchange timezone handling.
+  - Sorts data chronologically before computing moving averages.
   - Generates chart images in `img/`:
     - volume subplot
     - price + moving averages subplot (50-day always, 200-day when enough history exists)
 
 - `ai_insights_handler.py`
-  - Builds and sends prompts to the configured LLM provider via LangChain.
+  - Builds prompts with pre-fetched stock data and sends them to the configured LLM.
   - Streams model output via `astream_events` for live UI updates.
   - Enforces structured JSON response format with fields:
     - `answer` (plain text analysis)
     - `citations` (URL list)
   - Parses and normalizes citations for frontend rendering.
+
+- `company_info_handler.py`
+  - Queries the LLM for company metadata given a ticker symbol and market.
+  - Returns structured `CompanyInfo` with `full_name`, `description`, and `website`.
+  - Gracefully falls back to ticker-only display if the lookup fails.
+
+- `agent/stock_analysis_agent.py` / `agent/company_info_agent.py`
+  - Each creates an LLM instance from the shared config in `config/llm_config.py`.
+  - The stock analysis agent handles financial analysis; the company info agent handles metadata lookups.
+
+- `config/llm_config.py`
+  - Central configuration for LLM provider, model name, and base URL.
+  - Defaults to Perplexity Sonar (`sonar-pro`) via the OpenAI-compatible endpoint.
 
 ## Getting Started
 
@@ -70,7 +94,7 @@ ALPHAVANTAGE_API_KEY=your_alpha_vantage_key
 MODEL_API_KEY=your_model_provider_key
 ```
 
-`MODEL_API_KEY` should be the API key for the provider configured in `llm_config.py` (for example, Perplexity when using `sonar` / `sonar-pro`).
+`MODEL_API_KEY` should be the API key for the provider configured in `config/llm_config.py` (for example, Perplexity when using `sonar-pro`).
 
 Get your API keys:
 - Alpha Vantage: https://www.alphavantage.co/
@@ -87,27 +111,39 @@ uv run ui_app.py
 
 The app will open at `http://localhost:8501`.
 
-## How Graphs Are Generated
+## How It Works
 
-Charts are built from Alpha Vantage `TIME_SERIES_DAILY` data (currently requested with `outputsize=compact`, usually ~100 rows) and saved as PNGs in the project’s `img/` folder.
+### Company Information
 
-1. **Data** – For each symbol and market, the app requests `TIME_SERIES_DAILY` from Alpha Vantage, converts it to a pandas DataFrame (date index, `close`, `volume`), and applies the exchange timezone for labels.
+For each ticker, the company info agent queries the LLM to retrieve:
+- **Full company name** (e.g. "Apple Inc." for AAPL)
+- **Business description** (1-2 sentence summary)
+- **Official website** (clickable link)
 
-2. **Plot layout** - Each chart is a single figure with two stacked subplots (matplotlib):
-   - **Volume** – Bar chart of daily trading volume (green).
-   - **Moving averages** – Closing price (blue) with 50-day MA (orange). 200-day MA (red) is shown only when enough historical data is available.
+This is displayed as a header above the chart and analysis columns.
 
-3. **Axes** – Dates use the exchange timezone; major ticks are monthly and minor ticks weekly. The figure is saved with `plt.savefig()`.
+### Chart Generation
 
-4. **Output** - One PNG per symbol and market, e.g. `img/NASDAQ_AAPL.png`. The `img/` directory is created automatically if it doesn’t exist. These paths are then used when requesting AI analysis.
+Charts are built from Alpha Vantage `TIME_SERIES_DAILY` data (requested with `outputsize=compact`, ~100 rows) and saved as PNGs in the `img/` folder.
 
-## LLM Output and Citations
+1. **Data** -- For each symbol and market, the app requests daily time series from Alpha Vantage, converts it to a pandas DataFrame, sorts it chronologically, and applies the exchange timezone for labels.
 
+2. **Plot layout** -- Each chart is a single figure with two stacked subplots (matplotlib):
+   - **Volume** -- Bar chart of daily trading volume (green).
+   - **Moving averages** -- Closing price (blue) with 50-day MA (orange). 200-day MA (red) is shown only when enough historical data is available.
+
+3. **Axes** -- Dates use the exchange timezone; major ticks are monthly and minor ticks weekly. The figure is saved with `plt.savefig()`.
+
+4. **Output** -- One PNG per symbol and market, e.g. `img/NASDAQ_AAPL.png`. The `img/` directory is created automatically.
+
+### AI Analysis
+
+- Stock data (OHLCV) is pre-fetched and injected directly into the prompt, avoiding tool-calling limitations of certain LLM providers.
 - The app requests a strict JSON response with:
   - `answer` (plain text)
   - `citations` (list of URLs)
-- Streaming is still live on the frontend while the response is generated.
-- All citations from analyzed symbols are consolidated into a single `Sources` section at the bottom of the page.
+- Streaming is live on the frontend while the response is generated.
+- Citation links appear under each stock's analysis in the right column.
 
 ## Supported Markets
 
@@ -130,4 +166,4 @@ The free tier has strict limitations:
 ## Notes
 
 - **Data**: Uses `TIME_SERIES_DAILY` with `outputsize=compact` by default (~100 days, depending on market/trading days).
-- **Model**: Defaults to Perplexity Sonar config in `llm_config.py`, but supports provider/model changes via configuration.
+- **Model**: Defaults to Perplexity Sonar config in `config/llm_config.py`, but supports provider/model changes via configuration. The Perplexity Sonar API does not support custom tool/function calling, so stock data is pre-fetched and included in the prompt.
