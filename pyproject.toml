@@ -14,6 +14,7 @@ dependencies = [
   "langchain-openai",
   "streamlit",
   "python-dotenv>=1.2.2",
+  "langchain-perplexity>=1.1.0",
 ]
 
  [build-system]
