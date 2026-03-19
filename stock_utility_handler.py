@@ -7,7 +7,6 @@ from typing import Any
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-import matplotlib.widgets as widgets
 import pandas as pd
 import pytz
 import requests
@@ -196,9 +195,6 @@ class StockAnalyzer:
 
             # Auto-rotate labels if needed
             plt.gcf().autofmt_xdate()
-
-        # Add hover tooltip
-        cursor = widgets.Cursor(plt.gca(), color='red', linewidth=1)
 
         plt.tight_layout()
         plt.savefig(image_path)
