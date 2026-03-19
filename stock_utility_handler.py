@@ -194,4 +194,4 @@ class StockAnalyzer:
 
         plt.tight_layout()
         plt.savefig(image_path)
-        plt.show()
+        plt.close()
