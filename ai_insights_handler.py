@@ -6,12 +6,13 @@ from collections.abc import Iterator
 from typing import Any
 from langchain.chat_models import init_chat_model
 
-from llm_config import (
+from config.llm_config import (
     MODEL,
     MODEL_PROVIDER,
     PERPLEXITY_OPENAI_BASE_URL,
     SUPPORTED_PERPLEXITY_MODELS,
 )
+from prompts.analyst_prompt import ANALYST_PROMPT_TEMPLATE
 
 INVALID_API_KEY_RESPONSE = "Sorry, I am unable to provide response due to invalid API key"
 StructuredResponse = dict[str, Any]
@@ -242,17 +243,7 @@ class AIInsights:
 
     def _build_prompt(self, stock: str, market: str) -> str:
         """Build the stock analysis prompt for the model."""
-        return (
-            "Return ONLY valid JSON with exactly two top-level fields: "
-            '{"answer": "<plain text analysis>", "citations": ["https://..."]}. '
-            f"Analyze stock '{stock}' over the last 100 days on market '{market}'. "
-            "Base your answer on volume traded, closing prices, and 50-day/200-day moving averages (or 50-day only when 200-day is unavailable). "
-            "State whether the stock appears worth purchasing or not. "
-            "The 'answer' field must be plain text only with no markdown or special formatting. "
-            "The 'citations' field must be a JSON array of source URL strings only, and it must include every source referenced or relied on in the answer. "
-            "Do not return only a partial subset of the sources. "
-            "If you have no citations, return an empty list."
-        )
+        return ANALYST_PROMPT_TEMPLATE.format(stock=stock, market=market)
 
     def _is_invalid_api_key_error(self, exc: Exception) -> bool:
         """Check whether an exception indicates invalid API-key authentication."""
