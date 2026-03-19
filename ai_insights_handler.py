@@ -52,8 +52,7 @@ class AIInsights:
             loop.run_until_complete(iterator.aclose())
             loop.close()
 
-    @property
-    def latest_response(self) -> StructuredResponse:
+    def get_latest_response(self) -> StructuredResponse:
         """Structured result populated after streaming completes."""
         return self._latest_response
 
