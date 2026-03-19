@@ -134,7 +134,7 @@ class StockAnalyzer:
     def plot_stock_data(
         self, df: pd.DataFrame, stock_symbol: str, market: str, image_path: str
     ) -> None:
-        """Plot closing price, volume, and moving averages; save figure to disk.
+        """Plot volume and moving averages; save figure to disk.
 
         Args:
             df: DataFrame with date index and 'close', 'volume' columns.
@@ -143,33 +143,41 @@ class StockAnalyzer:
             image_path: File path to save the figure (e.g. PNG).
         """
         exchange_timezone = self._get_market_timezone(market)
+        dates = pd.to_datetime(df.index)
         plt.figure(figsize=(16, 10))
 
-        # Plotting Closing Price
-        plt.subplot(3, 1, 1)
-        plt.plot(pd.to_datetime(df.index), df['close'], label=f'{stock_symbol} Closing Price ({market})', color='blue')
-        plt.title(f'{stock_symbol} Stock Performance ({market})')
-        plt.xlabel(f'Date ({exchange_timezone})')
-        plt.ylabel('Price')
-        plt.legend()
-        plt.grid(True)
-
         # Plotting Volume
-        plt.subplot(3, 1, 2)
-        plt.bar(pd.to_datetime(df.index), df['volume'], label=f'{stock_symbol} Volume ({market})', color='green', width=2)
+        plt.subplot(2, 1, 1)
+        plt.bar(
+            dates,
+            df["volume"],
+            label=f"{stock_symbol} Volume ({market})",
+            color="green",
+            width=2,
+        )
         plt.xlabel(f'Date ({exchange_timezone})')
         plt.ylabel('Volume')
         plt.legend()
         plt.grid(True)
 
-        # Plotting Moving Averages
-        plt.subplot(3, 1, 3)
-        df['MA_7'] = df['close'].rolling(window=7).mean()
-        df['MA_20'] = df['close'].rolling(window=20).mean()
-        plt.plot(pd.to_datetime(df.index), df['close'], label=f'{stock_symbol} Closing Price ({market})', color='blue', alpha=0.7)
-        plt.plot(pd.to_datetime(df.index), df['MA_7'], label='7-Day MA', color='orange')
-        plt.plot(pd.to_datetime(df.index), df['MA_20'], label='20-Day MA', color='red')
-        plt.xlabel(f'Date Month ({exchange_timezone})')
+        # Plotting Moving Averages: 50-day always, 200-day only if enough history.
+        plt.subplot(2, 1, 2)
+        df["MA_50"] = df["close"].rolling(window=50).mean()
+        has_ma_200 = len(df) >= 200
+        if has_ma_200:
+            df["MA_200"] = df["close"].rolling(window=200).mean()
+        plt.plot(
+            dates,
+            df["close"],
+            label=f"{stock_symbol} Closing Price ({market})",
+            color="blue",
+            alpha=0.7,
+        )
+        plt.plot(dates, df["MA_50"], label="50-Day MA", color="orange")
+        if has_ma_200:
+            plt.plot(dates, df["MA_200"], label="200-Day MA", color="red")
+        plt.title(f"{stock_symbol} Stock Performance ({market})")
+        plt.xlabel(f"Date ({exchange_timezone})")
         plt.ylabel('Price')
         plt.legend()
         plt.grid(True)
