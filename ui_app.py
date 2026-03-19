@@ -1,4 +1,4 @@
-"""Streamlit UI for the Stock AI Agent: multi-symbol analysis and results."""
+"""Streamlit UI for the US Stock AI Agent: multi-symbol analysis and results."""
 
 import os
 import sys
@@ -21,6 +21,9 @@ from ai_insights_handler import AIInsights
 from stock_utility_handler import StockAPI, StockAnalyzer, TickerNotFoundError
 import streamlit as st
 
+# Set page layout to wide to allow for wider charts
+st.set_page_config(layout="wide")
+
 
 def _prepare_symbol_analysis(stock: str, market: str) -> dict[str, str]:
     """Fetch data and generate chart for one symbol without Streamlit calls."""
@@ -39,7 +42,7 @@ def _prepare_symbol_analysis(stock: str, market: str) -> dict[str, str]:
 
 def page1() -> None:
     """Render the input page: 1–3 individual symbol fields and market selection."""
-    st.title("Stock AI Agent")
+    st.title("US Stock AI Agent")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -122,28 +125,28 @@ def page2() -> None:
                         {
                             "stock": stock,
                             "image_path": "",
-                            "ai_insights": f"Preparation failed for {stock}: {prepared['error']}",
-                            "sources": [],
+                            "answer": f"Preparation failed for {stock}: {prepared['error']}",
+                            "citations": [],
                         }
                     )
                     continue
 
-                st.subheader(f"Streaming Analysis: {stock}")
                 image_path = prepared["image_path"]
 
                 streaming_output = st.empty()
                 stream_buffer = []
-                for chunk in ai_insights_obj.get_ai_insights_stream(image_path, stock, market):
+                for chunk in ai_insights_obj.get_ai_insights_stream(stock, market):
                     stream_buffer.append(chunk)
                     streaming_output.markdown("".join(stream_buffer))
-                sources = ai_insights_obj.get_latest_sources(stock, market)
+                structured_response = ai_insights_obj.get_latest_response(stock, market)
+                streaming_output.empty()
 
                 run_results.append(
                     {
                         "stock": stock,
                         "image_path": image_path,
-                        "ai_insights": "".join(stream_buffer),
-                        "sources": sources,
+                        "answer": structured_response.get("answer", "".join(stream_buffer)),
+                        "citations": structured_response.get("citations", []),
                     }
                 )
 
@@ -151,19 +154,32 @@ def page2() -> None:
             st.session_state.internal_results_available = True
 
     if st.session_state.internal_results_available:
+        all_citations: list[str] = []
+        seen_citation_urls: set[str] = set()
         for result in st.session_state.results:
             stock = result["stock"]
-            st.subheader(f"Chart Analysis - {stock}")
-            if result["image_path"]:
-                st.image(result["image_path"], caption=f"{stock} Chart", width=True)
-            st.subheader(f"Analysis Results - {stock}")
-            st.write(result["ai_insights"])
-            st.markdown("**Sources**")
-            if result.get("sources"):
-                for source in result["sources"]:
-                    st.markdown(f"{source['index']}. [{source['title']}]({source['url']})")
-            else:
-                st.caption("No sources provided.")
+            left_col, right_col = st.columns(2)
+            with left_col:
+                st.subheader(f"Chart Analysis - {stock}")
+                if result["image_path"]:
+                    st.image(result["image_path"], caption=f"{stock} Chart", width="stretch")
+            with right_col:
+                st.subheader(f"Analysis Results - {stock}")
+                st.text(result["answer"])
+
+            for url in result.get("citations", []):
+                if url and url not in seen_citation_urls:
+                    seen_citation_urls.add(url)
+                    all_citations.append(url)
+
+            st.markdown("---")
+
+        st.subheader("Sources")
+        if all_citations:
+            for index, url in enumerate(all_citations, start=1):
+                st.markdown(f"{index}. [{url}]({url})")
+        else:
+            st.caption("No sources provided.")
 
         if st.button("Back"):
             st.session_state.page = "page1"
