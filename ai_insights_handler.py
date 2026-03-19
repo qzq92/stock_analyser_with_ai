@@ -1,5 +1,7 @@
 """AI-powered stock insights via OpenAI-compatible API (e.g. Perplexity)."""
 
+import asyncio
+import json
 from collections.abc import Iterator
 from typing import Any
 from langchain.chat_models import init_chat_model
@@ -12,7 +14,7 @@ from llm_config import (
 )
 
 INVALID_API_KEY_RESPONSE = "Sorry, I am unable to provide response due to invalid API key"
-Source = dict[str, str]
+StructuredResponse = dict[str, Any]
 
 
 class AIInsights:
@@ -38,35 +40,12 @@ class AIInsights:
             base_url=PERPLEXITY_OPENAI_BASE_URL,
             temperature=0,
         )
-        self._latest_sources: list[Source] = []
+        self._latest_response: StructuredResponse = {"answer": "", "citations": []}
 
-    def get_ai_insights(self, image_path: str, stock: str, market: str) -> str:
-        """Request LLM analysis and a buy/skip suggestion for the given stock and market.
-
-        Args:
-            image_path: Path to the chart image (currently used for context only).
-            stock: Stock ticker symbol.
-            market: Exchange identifier (e.g. 'NASDAQ', 'SINGAPORE').
-
-        Returns:
-            The model's analysis and recommendation as a string.
-        """
-        prompt = self._build_prompt(stock, market)
-        try:
-            response = self.model.invoke(prompt)
-            return response.content if hasattr(response, "content") else str(response)
-        except Exception as exc:
-            if self._is_invalid_api_key_error(exc):
-                return INVALID_API_KEY_RESPONSE
-            raise
-
-    def get_ai_insights_stream(
-        self, image_path: str, stock: str, market: str
-    ) -> Iterator[str]:
+    def get_ai_insights_stream(self, stock: str, market: str) -> Iterator[str]:
         """Stream LLM output chunks for the given stock and market prompt.
 
         Args:
-            image_path: Path to the chart image (currently used for context only).
             stock: Stock ticker symbol.
             market: Exchange identifier (e.g. 'NASDAQ', 'SINGAPORE').
 
@@ -74,118 +53,205 @@ class AIInsights:
             Incremental text chunks from the model response stream.
         """
         prompt = self._build_prompt(stock, market)
-        self._latest_sources = []
-
+        self._latest_response = {"answer": "", "citations": []}
+        loop = asyncio.new_event_loop()
+        iterator = self._astream_answer(prompt)
         try:
-            for chunk in self.model.stream(prompt):
-                chunk_sources = self._extract_sources_from_obj(chunk)
-                if chunk_sources:
-                    self._latest_sources = chunk_sources
-                chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
-                if isinstance(chunk_text, str):
-                    if chunk_text:
-                        yield chunk_text
-                elif isinstance(chunk_text, list):
-                    for part in chunk_text:
-                        if isinstance(part, str) and part:
-                            yield part
-        except Exception as exc:
-            if self._is_invalid_api_key_error(exc):
-                yield INVALID_API_KEY_RESPONSE
-                return
-            raise
+            while True:
+                try:
+                    chunk = loop.run_until_complete(iterator.__anext__())
+                except StopAsyncIteration:
+                    break
+                yield chunk
+        finally:
+            loop.run_until_complete(iterator.aclose())
+            loop.close()
 
-    def get_latest_sources(self, stock: str, market: str) -> list[Source]:
-        """Return latest sources, or fetch once via non-streaming fallback."""
-        if self._latest_sources:
-            return self._latest_sources
+    def get_latest_response(self, stock: str, market: str) -> StructuredResponse:
+        """Return latest structured response, or fetch it once via non-streaming fallback."""
+        if self._latest_response["answer"] or self._latest_response["citations"]:
+            print(f"Latest response: {self._latest_response}")
+            return self._latest_response
 
         prompt = self._build_prompt(stock, market)
         try:
             response = self.model.invoke(prompt)
+            content = response.content if hasattr(response, "content") else str(response)
+            self._latest_response = self._parse_structured_response(content)
         except Exception as exc:
             if self._is_invalid_api_key_error(exc):
-                return []
+                return {"answer": INVALID_API_KEY_RESPONSE, "citations": []}
             raise
 
-        self._latest_sources = self._extract_sources_from_obj(response)
-        return self._latest_sources
+        return self._latest_response
 
-    def _extract_sources_from_obj(self, obj: Any) -> list[Source]:
-        """Extract and normalize citation/search-result metadata from responses/chunks."""
-        search_results = self._safe_get(obj, "search_results")
-        citations = self._safe_get(obj, "citations")
-        response_metadata = self._safe_get(obj, "response_metadata")
-        additional_kwargs = self._safe_get(obj, "additional_kwargs")
+    async def _astream_answer(self, prompt: str) -> Any:
+        """Stream only the answer field from a JSON response via astream_events."""
+        raw_buffer = ""
+        streamed_answer = ""
 
-        if isinstance(response_metadata, dict):
-            search_results = search_results or response_metadata.get("search_results")
-            citations = citations or response_metadata.get("citations")
-
-        if isinstance(additional_kwargs, dict):
-            search_results = search_results or additional_kwargs.get("search_results")
-            citations = citations or additional_kwargs.get("citations")
-
-        return self._normalize_sources(search_results, citations)
-
-    def _normalize_sources(self, search_results: Any, citations: Any) -> list[Source]:
-        """Normalize raw metadata to ordered, deduplicated source objects."""
-        ordered_sources: list[Source] = []
-        seen_urls: set[str] = set()
-
-        if isinstance(search_results, list):
-            for item in search_results:
-                if not isinstance(item, dict):
-                    continue
-                url = item.get("url")
-                if not isinstance(url, str) or not url or url in seen_urls:
-                    continue
-                title = item.get("title")
-                display_title = title if isinstance(title, str) and title else url
-                seen_urls.add(url)
-                ordered_sources.append({"title": display_title, "url": url})
-
-        if isinstance(citations, list):
-            for item in citations:
-                if isinstance(item, str):
-                    url = item
-                    title = item
-                elif isinstance(item, dict):
-                    url = item.get("url")
-                    title = item.get("title") or url
-                else:
-                    continue
-
-                if not isinstance(url, str) or not url or url in seen_urls:
-                    continue
-                seen_urls.add(url)
-                ordered_sources.append({"title": str(title), "url": url})
-
-        indexed_sources: list[Source] = []
-        for idx, source in enumerate(ordered_sources, start=1):
-            indexed_sources.append(
-                {
-                    "index": str(idx),
-                    "title": source["title"],
-                    "url": source["url"],
-                }
-            )
-        return indexed_sources
-
-    def _safe_get(self, obj: Any, field: str) -> Any:
-        """Safely fetch an attribute from SDK/model objects."""
         try:
-            return getattr(obj, field, None)
-        except Exception:
+            async for event in self.model.astream_events(prompt, version="v2"):
+                print(f"Event: {event}")
+                if event.get("event") != "on_chat_model_stream":
+                    continue
+
+                chunk = event.get("data", {}).get("chunk")
+                print(f"Chunk: {chunk}")
+                chunk_text = self._chunk_to_text(chunk)
+                if not chunk_text:
+                    continue
+
+                raw_buffer += chunk_text
+                current_answer = self._extract_partial_answer(raw_buffer)
+                if current_answer is None:
+                    continue
+
+                new_text = current_answer[len(streamed_answer):]
+                if new_text:
+                    streamed_answer = current_answer
+                    yield new_text
+
+            self._latest_response = self._parse_structured_response(
+                raw_buffer,
+                fallback_answer=streamed_answer,
+            )
+        except Exception as exc:
+            if self._is_invalid_api_key_error(exc):
+                self._latest_response = {
+                    "answer": INVALID_API_KEY_RESPONSE,
+                    "citations": [],
+                }
+                yield INVALID_API_KEY_RESPONSE
+                return
+            raise
+
+    def _chunk_to_text(self, chunk: Any) -> str:
+        """Extract streamed text from a LangChain chunk object."""
+        if chunk is None:
+            return ""
+
+        chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
+        if isinstance(chunk_text, str):
+            return chunk_text
+        if isinstance(chunk_text, list):
+            return "".join(part for part in chunk_text if isinstance(part, str))
+        return ""
+
+    def _extract_partial_answer(self, raw_buffer: str) -> str | None:
+        """Extract the current value of the JSON answer field from a partial buffer."""
+        key_index = raw_buffer.find('"answer"')
+        if key_index == -1:
             return None
+
+        colon_index = raw_buffer.find(":", key_index)
+        if colon_index == -1:
+            return None
+
+        quote_index = raw_buffer.find('"', colon_index)
+        if quote_index == -1:
+            return None
+
+        answer_chars: list[str] = []
+        index = quote_index + 1
+        while index < len(raw_buffer):
+            char = raw_buffer[index]
+            if char == "\\":
+                if index + 1 >= len(raw_buffer):
+                    break
+                escaped = raw_buffer[index + 1]
+                if escaped == "u":
+                    if index + 5 >= len(raw_buffer):
+                        break
+                    unicode_text = raw_buffer[index + 2:index + 6]
+                    try:
+                        answer_chars.append(chr(int(unicode_text, 16)))
+                    except ValueError:
+                        break
+                    index += 6
+                    continue
+
+                escape_map = {
+                    '"': '"',
+                    "\\": "\\",
+                    "/": "/",
+                    "b": "\b",
+                    "f": "\f",
+                    "n": "\n",
+                    "r": "\r",
+                    "t": "\t",
+                }
+                answer_chars.append(escape_map.get(escaped, escaped))
+                index += 2
+                continue
+
+            if char == '"':
+                return "".join(answer_chars)
+
+            answer_chars.append(char)
+            index += 1
+
+        return "".join(answer_chars)
+
+    def _parse_structured_response(
+        self,
+        raw_text: str,
+        fallback_answer: str = "",
+    ) -> StructuredResponse:
+        """Parse the model response into answer/citations JSON."""
+        cleaned_text = raw_text.strip()
+        if cleaned_text.startswith("```"):
+            cleaned_text = cleaned_text.strip("`")
+            if cleaned_text.startswith("json"):
+                cleaned_text = cleaned_text[4:].strip()
+
+        if "{" in cleaned_text and "}" in cleaned_text:
+            cleaned_text = cleaned_text[cleaned_text.find("{"):cleaned_text.rfind("}") + 1]
+
+        try:
+            payload = json.loads(cleaned_text)
+        except json.JSONDecodeError:
+            return {
+                "answer": fallback_answer or raw_text.strip(),
+                "citations": [],
+            }
+
+        answer = payload.get("answer")
+        citations = payload.get("citations")
+        return {
+            "answer": answer if isinstance(answer, str) else fallback_answer,
+            "citations": self._normalize_citations(citations),
+        }
+
+    def _normalize_citations(self, citations: Any) -> list[str]:
+        """Normalize citation list to deduplicated URL strings."""
+        if not isinstance(citations, list):
+            return []
+
+        normalized: list[str] = []
+        seen_urls: set[str] = set()
+        for item in citations:
+            if not isinstance(item, str):
+                continue
+            url = item.strip()
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            normalized.append(url)
+        return normalized
 
     def _build_prompt(self, stock: str, market: str) -> str:
         """Build the stock analysis prompt for the model."""
         return (
-            f"This is a description of stock performance for stock '{stock}' over the last "
-            f"100 days on market '{market}'. On the basis of volume traded, closing prices, "
-            f"and 7- and 20-day moving averages, provide some analysis and a suggestion "
-            f"about this stock. Should this stock be purchased or not?"
+            "Return ONLY valid JSON with exactly two top-level fields: "
+            '{"answer": "<plain text analysis>", "citations": ["https://..."]}. '
+            f"Analyze stock '{stock}' over the last 100 days on market '{market}'. "
+            "Base your answer on volume traded, closing prices, and 50-day/200-day moving averages (or 50-day only when 200-day is unavailable). "
+            "State whether the stock appears worth purchasing or not. "
+            "The 'answer' field must be plain text only with no markdown or special formatting. "
+            "The 'citations' field must be a JSON array of source URL strings only, and it must include every source referenced or relied on in the answer. "
+            "Do not return only a partial subset of the sources. "
+            "If you have no citations, return an empty list."
         )
 
     def _is_invalid_api_key_error(self, exc: Exception) -> bool:
