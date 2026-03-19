@@ -19,6 +19,7 @@ warnings.filterwarnings("ignore", message="Core Pydantic V1 functionality")
 import concurrent.futures
 
 from ai_insights_handler import AIInsights
+from company_info_handler import CompanyInfoHandler
 from stock_utility_handler import StockAPI, StockAnalyzer, TickerNotFoundError
 import streamlit as st
 
@@ -109,8 +110,19 @@ def page2() -> None:
             st.rerun()
 
         ai_insights_obj = AIInsights()
+        company_info_handler = CompanyInfoHandler()
         run_results = []
         for stock in symbols:
+            with st.spinner(f"Looking up {stock}..."):
+                company = company_info_handler.get_company_info(stock, market)
+
+            display_name = f"{company.full_name} ({stock})" if company.full_name else stock
+            st.subheader(display_name)
+            if company.description:
+                st.write(company.description)
+            if company.website:
+                st.markdown(f"[{company.website}]({company.website})")
+
             with st.spinner(f"Preparing chart for {stock}..."):
                 try:
                     prepared = _prepare_symbol_analysis(stock, market)
@@ -137,7 +149,7 @@ def page2() -> None:
                         st.image(
                             prepared["image_path"],
                             caption=f"{stock} Chart",
-                            width='stretch,
+                            width='stretch',
                         )
                     else:
                         st.write("Chart unavailable due to preparation error.")
@@ -153,6 +165,9 @@ def page2() -> None:
                         "image_path": "",
                         "answer": f"Preparation failed for {stock}: {prepared['error']}",
                         "citations": [],
+                        "company_full_name": company.full_name,
+                        "company_description": company.description,
+                        "company_website": company.website,
                     }
                 )
                 continue
@@ -163,7 +178,7 @@ def page2() -> None:
             left_col, right_col = st.columns(2)
             with left_col:
                 st.subheader(f"Chart Analysis - {stock}")
-                st.image(image_path, caption=f"{stock} Chart", width='stretch)
+                st.image(image_path, caption=f"{stock} Chart", width='stretch')
             with right_col:
                 st.subheader(f"Analysis Results - {stock}")
                 streaming_output = st.empty()
@@ -189,6 +204,9 @@ def page2() -> None:
                     "image_path": image_path,
                     "answer": structured_response.answer or "".join(stream_buffer),
                     "citations": structured_response.citations,
+                    "company_full_name": company.full_name,
+                    "company_description": company.description,
+                    "company_website": company.website,
                 }
             )
 
@@ -200,11 +218,22 @@ def page2() -> None:
         for result in st.session_state.results:
             stock = result["stock"]
             citations = result.get("citations") or []
+            full_name = result.get("company_full_name", "")
+            description = result.get("company_description", "")
+            website = result.get("company_website", "")
+
+            display_name = f"{full_name} ({stock})" if full_name else stock
+            st.subheader(display_name)
+            if description:
+                st.write(description)
+            if website:
+                st.markdown(f"[{website}]({website})")
+
             left_col, right_col = st.columns(2)
             with left_col:
                 st.subheader(f"Chart Analysis - {stock}")
                 if result["image_path"]:
-                    st.image(result["image_path"], caption=f"{stock} Chart", width='stretch)
+                    st.image(result["image_path"], caption=f"{stock} Chart", width='stretch')
             with right_col:
                 st.subheader(f"Analysis Results - {stock}")
                 st.text(result["answer"])
