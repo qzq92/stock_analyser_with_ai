@@ -138,7 +138,7 @@ def page2() -> None:
                 for chunk in ai_insights_obj.get_ai_insights_stream(stock, market):
                     stream_buffer.append(chunk)
                     streaming_output.markdown("".join(stream_buffer))
-                structured_response = ai_insights_obj.latest_response.model_dump()
+                structured_response = ai_insights_obj.get_latest_response()
                 streaming_output.empty()
 
                 run_results.append(
