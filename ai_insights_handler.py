@@ -3,7 +3,12 @@
 from collections.abc import Iterator
 from langchain.chat_models import init_chat_model
 
-from llm_config import OPENAI_MODEL, PERPLEXITY_OPENAI_BASE_URL
+from llm_config import (
+    MODEL,
+    MODEL_PROVIDER,
+    PERPLEXITY_OPENAI_BASE_URL,
+    SUPPORTED_PERPLEXITY_MODELS,
+)
 
 INVALID_API_KEY_RESPONSE = "Sorry, I am unable to provide response due to invalid API key"
 
@@ -17,9 +22,16 @@ class AIInsights:
         Args:
             api_key: API key for the OpenAI-compatible endpoint (e.g. Perplexity).
         """
+        if MODEL not in SUPPORTED_PERPLEXITY_MODELS:
+            supported_models = ", ".join(SUPPORTED_PERPLEXITY_MODELS)
+            raise ValueError(
+                f"Unsupported model '{MODEL}' for Perplexity endpoint. "
+                f"Supported models: {supported_models}"
+            )
+
         self.model = init_chat_model(
-            model=OPENAI_MODEL,
-            model_provider="openai",
+            model=MODEL,
+            model_provider=MODEL_PROVIDER,
             api_key=api_key,
             base_url=PERPLEXITY_OPENAI_BASE_URL,
             temperature=0,
