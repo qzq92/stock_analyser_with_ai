@@ -1,6 +1,7 @@
 """AI-powered stock insights via OpenAI-compatible API (e.g. Perplexity)."""
 
 from collections.abc import Iterator
+from typing import Any
 from langchain.chat_models import init_chat_model
 
 from llm_config import (
@@ -11,6 +12,7 @@ from llm_config import (
 )
 
 INVALID_API_KEY_RESPONSE = "Sorry, I am unable to provide response due to invalid API key"
+Source = dict[str, str]
 
 
 class AIInsights:
@@ -36,6 +38,7 @@ class AIInsights:
             base_url=PERPLEXITY_OPENAI_BASE_URL,
             temperature=0,
         )
+        self._latest_sources: list[Source] = []
 
     def get_ai_insights(self, image_path: str, stock: str, market: str) -> str:
         """Request LLM analysis and a buy/skip suggestion for the given stock and market.
@@ -71,9 +74,13 @@ class AIInsights:
             Incremental text chunks from the model response stream.
         """
         prompt = self._build_prompt(stock, market)
+        self._latest_sources = []
 
         try:
             for chunk in self.model.stream(prompt):
+                chunk_sources = self._extract_sources_from_obj(chunk)
+                if chunk_sources:
+                    self._latest_sources = chunk_sources
                 chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
                 if isinstance(chunk_text, str):
                     if chunk_text:
@@ -87,6 +94,90 @@ class AIInsights:
                 yield INVALID_API_KEY_RESPONSE
                 return
             raise
+
+    def get_latest_sources(self, stock: str, market: str) -> list[Source]:
+        """Return latest sources, or fetch once via non-streaming fallback."""
+        if self._latest_sources:
+            return self._latest_sources
+
+        prompt = self._build_prompt(stock, market)
+        try:
+            response = self.model.invoke(prompt)
+        except Exception as exc:
+            if self._is_invalid_api_key_error(exc):
+                return []
+            raise
+
+        self._latest_sources = self._extract_sources_from_obj(response)
+        return self._latest_sources
+
+    def _extract_sources_from_obj(self, obj: Any) -> list[Source]:
+        """Extract and normalize citation/search-result metadata from responses/chunks."""
+        search_results = self._safe_get(obj, "search_results")
+        citations = self._safe_get(obj, "citations")
+        response_metadata = self._safe_get(obj, "response_metadata")
+        additional_kwargs = self._safe_get(obj, "additional_kwargs")
+
+        if isinstance(response_metadata, dict):
+            search_results = search_results or response_metadata.get("search_results")
+            citations = citations or response_metadata.get("citations")
+
+        if isinstance(additional_kwargs, dict):
+            search_results = search_results or additional_kwargs.get("search_results")
+            citations = citations or additional_kwargs.get("citations")
+
+        return self._normalize_sources(search_results, citations)
+
+    def _normalize_sources(self, search_results: Any, citations: Any) -> list[Source]:
+        """Normalize raw metadata to ordered, deduplicated source objects."""
+        ordered_sources: list[Source] = []
+        seen_urls: set[str] = set()
+
+        if isinstance(search_results, list):
+            for item in search_results:
+                if not isinstance(item, dict):
+                    continue
+                url = item.get("url")
+                if not isinstance(url, str) or not url or url in seen_urls:
+                    continue
+                title = item.get("title")
+                display_title = title if isinstance(title, str) and title else url
+                seen_urls.add(url)
+                ordered_sources.append({"title": display_title, "url": url})
+
+        if isinstance(citations, list):
+            for item in citations:
+                if isinstance(item, str):
+                    url = item
+                    title = item
+                elif isinstance(item, dict):
+                    url = item.get("url")
+                    title = item.get("title") or url
+                else:
+                    continue
+
+                if not isinstance(url, str) or not url or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                ordered_sources.append({"title": str(title), "url": url})
+
+        indexed_sources: list[Source] = []
+        for idx, source in enumerate(ordered_sources, start=1):
+            indexed_sources.append(
+                {
+                    "index": str(idx),
+                    "title": source["title"],
+                    "url": source["url"],
+                }
+            )
+        return indexed_sources
+
+    def _safe_get(self, obj: Any, field: str) -> Any:
+        """Safely fetch an attribute from SDK/model objects."""
+        try:
+            return getattr(obj, field, None)
+        except Exception:
+            return None
 
     def _build_prompt(self, stock: str, market: str) -> str:
         """Build the stock analysis prompt for the model."""
