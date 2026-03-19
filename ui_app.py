@@ -63,6 +63,10 @@ def page1() -> None:
 
     st.sidebar.header("About")
     st.sidebar.write("This is a stock analysis platform.")
+    st.sidebar.caption(
+        "Disclaimer: This app analyzes stock ticker symbols only. "
+        "It does not support other asset types."
+    )
 
     st.markdown("---")
 
