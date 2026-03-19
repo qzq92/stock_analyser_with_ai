@@ -52,22 +52,9 @@ class AIInsights:
             loop.run_until_complete(iterator.aclose())
             loop.close()
 
-    def get_latest_response(self, stock: str, market: str) -> StructuredResponse:
-        """Return latest structured response, or fetch it once via non-streaming fallback."""
-        if self._latest_response.answer or self._latest_response.citations:
-            print(f"Latest response: {self._latest_response}")
-            return self._latest_response
-
-        prompt = self._build_prompt(stock, market)
-        try:
-            response = self.analysis_agent.invoke(prompt)
-            content = response.content if hasattr(response, "content") else str(response)
-            self._latest_response = self._parse_structured_response(content)
-        except Exception as exc:
-            if self._is_invalid_api_key_error(exc):
-                return StructuredResponse(answer=INVALID_API_KEY_RESPONSE, citations=[])
-            raise
-
+    @property
+    def latest_response(self) -> StructuredResponse:
+        """Structured result populated after streaming completes."""
         return self._latest_response
 
     async def _astream_answer(self, prompt: str) -> Any:
